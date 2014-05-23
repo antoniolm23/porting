@@ -1,0 +1,101 @@
+
+			Trafshow Version 5.
+
+This directory contains trafshow source code, a tool for real-time network
+traffic visualization.
+
+Brief description
+-----------------
+
+Trafshow is a simple interactive program that gather the network traffic
+from all libpcap-capable interfaces to accumulate it in memory cache, and
+then separately display it on appropriated curses window in line-narrowed
+manner as a list of network flows sorted by throughput. Display updates
+occurs nearly in real time, asynchronously from data collecting. It look
+like a live show of traffic flows. Any kind of network traffic are mixed
+together in the one live-show screen, an Ethernet, IP, etc.
+
+The IP traffic can be aggregated by netmask prefix bits and service ports
+to reorganize a heap of trivial flows into the treelike hierarchies suitable
+for human perception. The user can glance over the list of resulting flows
+and select at their to browse detail. So you can deepen into the traffic
+inheritance hierarchy and inspect the packets of each trivial flow in variety
+of presentations: raw-hex, ascii, time-stamp.
+The program make aggregation automatically when number of flows will exceed
+some reasonable amount. Just a few seconds after launch may be required for
+adaptation to your volume of traffic.
+
+Trafshow also listens on UDP port (as a server) for diverse feeders of Cisco
+Netflow and then separately display the collected data in the same manner as
+described above. The following versions of Netflow are currently supported:
+V1, V5, V7.
+
+Usage
+-----
+
+This program may be found wonderful at lest to locate suspicious traffic on
+the net very quickly on demand, or to evaluate real-time traffic bandwidth
+utilization, in a simplest and convenient environment. But it is not intended
+for collecting and analysis of the network traffic for a long period of time,
+nor for billing!
+
+The program pretend to be IPv6 compatible and ready to using, but it is not
+tested enough. You can define INET6 to do so.
+
+Please see trafshow(1) man page for further information.
+
+Requirements
+------------
+
+Now trafshow is a multi-threaded application, therefore your system MUST
+support POSIX threads. In other words if your system does not support POSIX
+threads you cannot compile and use this program. Hopefully, the almost all
+of modern operating systems has support it by default (leastwise last years).
+
+Trafshow use the libpcap to gather network traffic, a system-independent
+interface for user-level packet capture. Note that most systems ship libpcap,
+but usually an older version. The minumum required version is 0.7, newest
+always preferred. The original distribution of the library is located at
+http://www.tcpdump.org.
+
+Trafshow can use variouse curses libraries, a terminal-independent set of
+screen functions with optimal cursor motion. Currently trafshow can be
+compiled with any curses library, but not all of them work with color
+functions properly. Slang or Ncurses is preferred because it right supports
+color. Note that most systems ship ncurses, that will be enough.
+
+Once libpcap and libncurses is built and installed, you can build trafshow
+using the procedure in the INSTALL file.
+
+Distribution and support
+------------------------
+
+Because the program is freely distributed software it can be found around
+of world with or without modifications. The original distribution of the
+program is available at ftp://ftp.nsk.su/pub/RinetSoft/trafshow-X.Y.tgz,
+where X is a main version and Y is a current release.
+
+There is no special support available right now.
+Problems, bugs, questions, desirable enhancements, etc., should be sent to
+the e-mail address trafshow@risp.ru.
+
+Please see trafshow(1) man page for the authors and acknowledgements.
+
+License
+-------
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice,
+   this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+3. The names of the authors may not be used to endorse or promote products
+   derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR IMPLIED
+WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+
