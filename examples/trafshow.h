@@ -94,7 +94,9 @@ typedef	struct pcap_handler {
 	const char *descr;		/* interface description (or null) */
 	const char *addrstr;		/* interface network address list */
 	pcap_t *pcap;			/* pcap device handler */
-	struct nm_desc *nmcap;         /* netmap device handler */ 
+	//added
+	struct nm_desc *nmcap;         /* netmap device handler */
+	//end added
 	pcap_addr_t *addr;		/* pcap device addresses */
 
 /* aggregation stuff */

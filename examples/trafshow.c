@@ -56,6 +56,8 @@
 #include "cisco_netflow.h"
 #include "help_page.h"
 
+#define MAX_IFNAMELEN   64
+
 char copyright[] = "Copyright (c) 1993-2006 Rinet Corp., Novosibirsk, Russia";
 
 static void vers();
@@ -75,7 +77,7 @@ static int resize_pending = 0;
 
 const char *progname;
 const char *hostname;
-const char* virtual_interface;
+char virtual_interface[MAX_IFNAMELEN];
 const char *color_conf = 0;
 char *expression = 0;
 char *search = 0;
@@ -114,10 +116,21 @@ main(argc, argv)
 		fprintf(stderr, "pcap_findalldevs: %s\n", buf);
 		exit(1);
 	}
-
+        
+    
 	opterr = 0;
-	while ((op = getopt(argc, argv, "a:bc:i:ns:u:pF:R:P:l:vh?")) != EOF) {
+	while ((op = getopt(argc, argv, "V:a:bc:i:ns:u:pF:R:P:vh?")) != EOF) {
 		switch (op) {
+        //added
+        case 'V':
+            if (!strncmp(optarg, "vale:", 5)) {
+                strcpy(virtual_interface, optarg);
+                fprintf(stderr, "%s\n", virtual_interface);
+            }
+            else
+                fprintf(stderr, "Syntax error: correct is vale:xxxx\n");
+            break;
+        //end added
 		case 'a':
 			aggregate = atoi(optarg);
 			if (aggregate < 0 || aggregate > ADDRBITLEN)
@@ -155,9 +168,6 @@ main(argc, argv)
 			if ((purge_time = atoi(optarg)) < 1)
 				usage();
 			break;
-        case 'l':
-            virtual_interface = optarg;
-            break;
 		case 'v':
 			vers();
 		case 'h':
@@ -233,9 +243,18 @@ main(argc, argv)
 		perror("pthread_create(catch_signals)");
 		exit(1);
 	}
-
+    
+    fprintf(stderr, "hello\n");
+    
+    //added
+    if (pthread_create(&pcap_thr, 0, pcap_feed2, ph_list)) {
+            perror("pthread_create(pcap_feed)");
+            exit(1);
+    }
+    //added
+    
 	/* spawn thread for the live packet capture */
-	if (ph_list) {
+	/*if (ph_list) {
 #ifdef	HAVE_PCAP_GET_SELECTABLE_FD
 		PCAP_HANDLER *ph;
 		for (ph = ph_list; ph; ph = ph->next) {
@@ -253,8 +272,9 @@ main(argc, argv)
 			perror("pthread_create(pcap_feed)");
 			exit(1);
 		}
-	}
-
+	}*/
+    
+    
 	/* start main loop */
 	(void)traf_show(ph_list);
 
@@ -519,11 +539,12 @@ pcap_feed(arg)
 {
 	PCAP_HANDLER *ph, *ph_list = (PCAP_HANDLER *)arg;
 	int npkt = -1, ndev, op;
-
+    //fprintf(stderr, "hello3\n");
 	do {
 		if (!npkt) usleep(1000); /* 1ms idle to prevent deadloop */
 		npkt = 0;
 		ndev = 0;
+        //fprintf(stderr, "hello2\n");
 		for (ph = ph_list; ph; ph = ph->next) {
 			if (!ph->nmcap) /* skip non-netmap devices */
 				continue;
@@ -535,7 +556,6 @@ pcap_feed(arg)
              */
 			op = nm_dispatch(ph->nmcap, -1, 
                              (nm_cb_t)parse_feed, (u_char *)ph);
-
 			if (op > 0) {
 				npkt += op;
 			} else if (op == -2 || (op == -1 && errno != EAGAIN)) {
@@ -567,9 +587,9 @@ pcap_feed2(arg)
 		ndev = 0;
 		FD_ZERO(&readfds);
 		for (ph = ph_list; ph; ph = ph->next) {
-			if (!ph->pcap) /* skip non-pcap devices */
+			if (!ph->nmcap) /* skip non-pcap devices */
 				continue;
-			op = pcap_get_selectable_fd(ph->pcap);
+			op = ph->nmcap->fd;
 			if (op < 0) /* should not happen */
 				continue;
 			if (op + 1 > ndev)
@@ -588,17 +608,18 @@ pcap_feed2(arg)
 		if (!op) /* select timed out, try again */
 			continue;
 		for (ph = ph_list; ph; ph = ph->next) {
-			if (!ph->pcap) /* skip non-pcap devices */
+			if (!ph->nmcap) /* skip non-pcap devices */
 				continue;
 #ifdef	notdef
-			if (!FD_ISSET(pcap_get_selectable_fd(ph->pcap), &readfds))
+			if (!FD_ISSET(ph->nmcap->fd, &readfds))
 				continue; /* skip silent devices */
 #endif
-			op = pcap_dispatch(ph->pcap, -1, parse_feed, (u_char *)ph);
+			op = nm_dispatch(ph->nmcap, -1, parse_feed, (u_char *)ph);
+            //fprintf(stderr, "packets read: %i\n", op);
 			if (op > 0) {
 				npkt += op;
 			} else if (op == -2 || (op == -1 && errno != EAGAIN)) {
-				pcap_close(ph->pcap);
+				nm_close(ph->pcap);
 				ph->pcap = 0;
 			}
 		}
@@ -613,11 +634,12 @@ parse_feed(a, h, p)
 	const struct pcap_pkthdr *h;
 	const u_char *p;
 {
+    //fprintf(stderr, "parsefeed\n");
 	PCAP_HANDLER *ph = (PCAP_HANDLER *)a;
 	NETSTAT ns;
-
+    
 	/* sanity check */
-	if (!ph || !ph->pcap) return;
+	if (!ph || !ph->nmcap) return;
 
 	/*ph->pcap_time = h->ts;*/
 	memset(&ns, 0, sizeof(NETSTAT));
@@ -627,6 +649,7 @@ parse_feed(a, h, p)
 
 	ns.mtime = h->ts;
 	pcap_save(ph, &ns);
+    
 }
 
 void
@@ -802,6 +825,7 @@ traf_show(arg)
 		FD_ZERO(&writefds);
 		op = select_event(&timeout);
 		if (!session_select(&nfds, &readfds, &writefds, &timeout, &op)) {
+            fprintf(stderr, "no active session\n");
 			/* no one active session?? should not happen */
 			return 0;
 		}
