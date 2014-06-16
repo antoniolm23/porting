@@ -10,6 +10,10 @@
 #ifndef	_PARSE_DL_H_
 #define	_PARSE_DL_H_
 
+//BEGIN
+#define DLT_NETMAP -3
+//END
+
 int is_parse_dl(int type);
 const char *parse_dl_name(int type);
 

@@ -139,7 +139,8 @@ PCAP_HANDLER *pcaph_create(PCAP_HANDLER *top, const struct netstat_header *nh);
 void pcaph_close(PCAP_HANDLER *ph);
 
 //BEGIN
-int ncap_init(PCAP_HANDLER **ph_list, pcap_if_t *dp);
+int ncap_init(PCAP_HANDLER **ph_list);
+int my_datalink(PCAP_HANDLER* ph);
 //END
 
 /* global variables */

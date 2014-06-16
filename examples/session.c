@@ -572,12 +572,11 @@ session_select(nfds, readfds, writefds, timeout, block)
 		if (!sd->connected) {
 			FD_SET(sd->sock, readfds);
 			
-			//NOTE: removed a ( from printf
-			printf("session_select: sock %d set for read", sd->sock);
+			dprintf(("session_select: sock %d set for read", sd->sock));
 		} else {
 			FD_SET(sd->sock, writefds);
 
-			printf("session_select: sock %d set for write", sd->sock);
+			dprintf(("session_select: sock %d set for write", sd->sock));
 		}
 
 		if (timerisset(&sd->expire)) {
