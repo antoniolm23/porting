@@ -28,7 +28,7 @@ MANDEST = ${prefix}/man
 
 PROG = trafshow
 CC = gcc
-CFLAGS = -g -O2 -Wall -I. -DHAVE_CONFIG_H -pthread -I ../sys
+CFLAGS = -g -Wall -I. -DHAVE_CONFIG_H -pthread -I ../sys
 YACC = bison -y
 YFLAGS = -d -p `echo $@ | sed -e 's/\..*/_/'`
 LEX = flex

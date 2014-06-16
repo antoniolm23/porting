@@ -19,6 +19,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
+#include <stdio.h>
 
 #include "session.h"
 #include "events.h"	/* just for tv_sub() */
@@ -43,7 +44,9 @@
 /*#elif*/
 #error the fcntl argument to turn ON/OFF non-blocking I/O is unknown
 #endif
-
+//BEGIN
+#define _POSIX_C_SOURCE 200809L
+//END
 static int session_read(SESSION *sd);
 
 static SESSION *first_session = 0;	/* first network session in table */
@@ -568,12 +571,13 @@ session_select(nfds, readfds, writefds, timeout, block)
 
 		if (!sd->connected) {
 			FD_SET(sd->sock, readfds);
-
-			dprintf(("session_select: sock %d set for read", sd->sock));
+			
+			//NOTE: removed a ( from printf
+			printf("session_select: sock %d set for read", sd->sock);
 		} else {
 			FD_SET(sd->sock, writefds);
 
-			dprintf(("session_select: sock %d set for write", sd->sock));
+			printf("session_select: sock %d set for write", sd->sock);
 		}
 
 		if (timerisset(&sd->expire)) {

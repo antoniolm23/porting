@@ -34,12 +34,23 @@
 #include <errno.h>
 #ifdef	linux
 #include <sys/ioctl.h>
+//BEGIN
 //#include <linux/if.h>
+//END
+
 #endif
 
+//BEGIN
 #define NETMAP_WITH_LIBS
 #include <net/netmap.h>
 #include <net/netmap_user.h>
+#define MAX_IFNAMELEN   64
+//END
+
+//BEGIN
+#define DLT_NETMAP -3
+//END
+
 #include "trafshow.h"
 #include "parse_dl.h"
 #include "screen.h"
@@ -55,8 +66,6 @@
 #include "session.h"
 #include "cisco_netflow.h"
 #include "help_page.h"
-
-#define MAX_IFNAMELEN   64
 
 char copyright[] = "Copyright (c) 1993-2006 Rinet Corp., Novosibirsk, Russia";
 
@@ -75,9 +84,12 @@ static void cleanup(void);
 
 static int resize_pending = 0;
 
+//BEGIN
+char virtual_interface[MAX_IFNAMELEN];
+//END
+
 const char *progname;
 const char *hostname;
-char virtual_interface[MAX_IFNAMELEN];
 const char *color_conf = 0;
 char *expression = 0;
 char *search = 0;
@@ -90,6 +102,10 @@ ShowMode show_mode = Interfaces;
 int promisc = 1;	/* promiscuous mode */
 int Oflag = 1;		/* optimize filter code */
 int nflag = 0;		/* use numeric value of service ports and protocols */
+
+//BEGIN
+int netmap = 0; //checks if we're using netmap or not
+//END
 
 int
 main(argc, argv)
@@ -116,21 +132,23 @@ main(argc, argv)
 		fprintf(stderr, "pcap_findalldevs: %s\n", buf);
 		exit(1);
 	}
-        
-    
+
 	opterr = 0;
+    //added option V
 	while ((op = getopt(argc, argv, "V:a:bc:i:ns:u:pF:R:P:vh?")) != EOF) {
 		switch (op) {
-        //added
-        case 'V':
-            if (!strncmp(optarg, "vale:", 5)) {
-                strcpy(virtual_interface, optarg);
-                fprintf(stderr, "%s\n", virtual_interface);
-            }
-            else
-                fprintf(stderr, "Syntax error: correct is vale:xxxx\n");
-            break;
-        //end added
+		//BEGIN added
+		case 'V':
+			if (!strncmp(optarg, "vale:", 5)) {
+				strcpy(virtual_interface, optarg);
+				fprintf(stderr, "%s\n", virtual_interface);
+			}
+			else
+				fprintf(stderr, "Syntax error: correct is vale:xxxx\n");
+			netmap = 1;
+			show_mode = NetStat;
+			break;
+		//END added
 		case 'a':
 			aggregate = atoi(optarg);
 			if (aggregate < 0 || aggregate > ADDRBITLEN)
@@ -187,12 +205,24 @@ main(argc, argv)
 			refresh_time, purge_time);
 		exit(1);
 	}
-
-	/* initialize list of pcap handlers */
-	if ((op = pcap_init(&ph_list, dev_list)) < 1) {
-		fprintf(stderr, "No packet capture device available (no permission?)\n");
-		exit(1);
+	
+	//BEGIN 
+	if (netmap == 1) {
+		//fprintf(stderr, "netmapSet");
+		if((op = ncap_init(&ph_list, dev_list)) < 1) {
+			fprintf(stderr, "Wrong in allocating the nmcap\n");
+			exit(1);
+		}
 	}
+	else {
+	//END
+		/* initialize list of pcap handlers */
+		if ((op = pcap_init(&ph_list, dev_list)) < 1) {
+			fprintf(stderr, "No packet capture device available (no permission?)\n");
+			exit(1);
+		}
+	}
+	
 
 	/* listen for cisco netflow */
 	if (udp_port > 1 && (cisco_netflow_init(&ph_list, udp_port) < 0)) {
@@ -243,18 +273,19 @@ main(argc, argv)
 		perror("pthread_create(catch_signals)");
 		exit(1);
 	}
-    
-    fprintf(stderr, "hello\n");
-    
-    //added
-    if (pthread_create(&pcap_thr, 0, pcap_feed2, ph_list)) {
-            perror("pthread_create(pcap_feed)");
-            exit(1);
-    }
-    //added
-    
+	
+	//BEGIN
+	if(netmap == 1) {
+		if (pthread_create(&pcap_thr, 0, pcap_feed2, ph_list)) {
+			perror("pthread_create(pcap_feed)");
+			exit(1);
+		}
+	}
+	else
+	//END
+	
 	/* spawn thread for the live packet capture */
-	/*if (ph_list) {
+	if (ph_list) {
 #ifdef	HAVE_PCAP_GET_SELECTABLE_FD
 		PCAP_HANDLER *ph;
 		for (ph = ph_list; ph; ph = ph->next) {
@@ -272,9 +303,8 @@ main(argc, argv)
 			perror("pthread_create(pcap_feed)");
 			exit(1);
 		}
-	}*/
-    
-    
+	}
+
 	/* start main loop */
 	(void)traf_show(ph_list);
 
@@ -330,8 +360,7 @@ pcap_init(ph_list, dp)
 	pcap_if_t *dp;
 {
 	int cnt = 0, err = 0, type;
-	//pcap_t *pd;
-    struct nm_desc *nd;
+	pcap_t *pd;
 	const pcap_addr_t *ap;
 	PCAP_HANDLER *ph, *ph_prev = 0;
 	char *cp, buf[256];
@@ -343,29 +372,29 @@ pcap_init(ph_list, dp)
 			continue; /* discard linux's any device silently */
 
 		buf[0] = '\0';
-		if ((nd = nm_open(virtual_interface, NULL, 0, 0)) == 0) {
+		if ((pd = pcap_open_live(dp->name, SNAPLEN, promisc, 1, buf)) == 0) {
 			fprintf(stderr, "%s: %s\n", dp->name, buf);
 			err++;
 			continue;
 		}
-		/*type = pcap_datalink(pd);
+		type = pcap_datalink(pd);
 		if (!is_parse_dl(type)) {
 			fprintf(stderr, "%s: datalink type %d is not supported\n",
 				dp->name, type);
 			pcap_close(pd);
 			err++;
 			continue;
-		}*/
+		}
 		if (buf[0] != '\0') {
 			fprintf(stderr, "%s: %s\n", dp->name, buf);
 			err++;
 		}
-		/*if (pcap_setnonblock(pd, 1, buf) < 0) {
+		if (pcap_setnonblock(pd, 1, buf) < 0) {
 			fprintf(stderr, "%s: %s\n", dp->name, buf);
 			pcap_close(pd);
 			err++;
 			continue;
-		}*/
+		}
 		if ((ph = (PCAP_HANDLER *)malloc(sizeof(PCAP_HANDLER))) == 0) {
 			perror("malloc");
 			exit(1);
@@ -379,7 +408,7 @@ pcap_init(ph_list, dp)
 		else if (dp->flags & PCAP_IF_LOOPBACK)
 			ph->descr = strdup("Loopback");
 		else	ph->descr = strdup(parse_dl_name(type));
-		ph->nmcap = nd;
+		ph->pcap = pd;
 		ph->addr = dp->addresses; /* XXX must be deep copy? */
 
 		/* make string of network address list */
@@ -434,6 +463,101 @@ pcap_init(ph_list, dp)
 	}
 	return cnt;
 }
+
+//BEGIN
+//initialize a netmap interface (just one), we use the first available interface
+//to make the structure of the handler similar to the one that we see normally 
+//with real interfaces
+int
+ncap_init(ph_list, dp)
+	PCAP_HANDLER **ph_list;
+	pcap_if_t *dp;
+{
+	int cnt = 0, err = 0, type;
+	struct nm_desc *nd;
+	const pcap_addr_t *ap;
+	PCAP_HANDLER *ph, *ph_prev = 0;
+	char *cp, buf[256];
+
+	if (!ph_list) return -1;
+
+	if (!strcasecmp(dp->name, "any")) {
+		fprintf(stderr, "silent device\n");
+		dp = dp->next;
+	}
+		
+
+	buf[0] = '\0';
+	if ((nd = nm_open(virtual_interface, NULL, 0, 0)) == 0) {
+		fprintf(stderr, "error: %s\n", virtual_interface);
+		err++;
+	}
+	
+	if ((ph = (PCAP_HANDLER *)malloc(sizeof(PCAP_HANDLER))) == 0) {
+		perror("malloc");
+		exit(1);
+	}
+	memset(ph, 0, sizeof(PCAP_HANDLER));
+
+	ph->masklen = aggregate;
+	ph->name = strdup(dp->name);
+	ph->selected = 1;
+	ph->descr = strdup("Virtual");
+	ph->nmcap = nd;
+	ph->addr = dp->addresses; /* XXX must be deep copy? */
+
+	/* make string of network address list */
+	buf[0] = '\0';
+	cp = buf;
+#ifdef  linux
+	if (type == DLT_EN10MB && (dp->flags & PCAP_IF_LOOPBACK) == 0) {
+		int sfd = socket(AF_INET, SOCK_DGRAM, 0);
+		if (sfd != -1) {
+			struct ifreq ifr;
+			memset(&ifr, 0, sizeof(struct ifreq));
+			memcpy(ifr.ifr_name, dp->name,
+					MIN(strlen(dp->name), sizeof(ifr.ifr_name)-1));
+			if (ioctl(sfd, SIOCGIFHWADDR, &ifr) != -1) {
+				(void)strcpy(cp, linkaddr_string((u_char *)ifr.ifr_hwaddr.sa_data,
+									ETHER_ADDR_LEN));
+				cp += strlen(cp);
+			}
+			close(sfd);
+		}
+	}
+#endif
+	for (ap = dp->addresses; ap && cp < (buf + sizeof(buf)-1);
+			ap = ap->next) {
+		if (buf[0]) {
+			*cp++ = ' ';
+			*cp = '\0';
+		}
+		if (satoa(ap->addr, cp, (buf + sizeof(buf)) - cp))
+			cp += strlen(cp);
+	}
+	*cp = '\0';
+	ph->addrstr = strdup(buf);
+
+	if ((ph->ns_mutex = (pthread_mutex_t *)malloc(sizeof(pthread_mutex_t))) == 0) {
+		perror("malloc");
+		exit(1);
+	}
+	pthread_mutex_init(ph->ns_mutex, 0);
+
+	ph->prev = ph_prev;
+	if (ph_prev)
+		ph_prev->next = ph;
+	else	*ph_list = ph;
+	ph_prev = ph;
+
+	cnt++;
+	if (cnt && err) {
+		fflush(stderr);
+		sleep(1);
+	}
+	return cnt;
+}
+//END
 
 PCAP_HANDLER *
 pcaph_create(top, nh)
@@ -539,28 +663,21 @@ pcap_feed(arg)
 {
 	PCAP_HANDLER *ph, *ph_list = (PCAP_HANDLER *)arg;
 	int npkt = -1, ndev, op;
-    //fprintf(stderr, "hello3\n");
+
 	do {
 		if (!npkt) usleep(1000); /* 1ms idle to prevent deadloop */
 		npkt = 0;
 		ndev = 0;
-        //fprintf(stderr, "hello2\n");
 		for (ph = ph_list; ph; ph = ph->next) {
-			if (!ph->nmcap) /* skip non-netmap devices */
+			if (!ph->pcap) /* skip non-pcap devices */
 				continue;
-            /* 
-             * ph is a parameter that the user passes to the callback parse_feed
-             * the other two parameters passed to the callback are passed by the
-             * pcap_dispatch. 
-             * NOTE: parse_feed is a pointer to a function
-             */
-			op = nm_dispatch(ph->nmcap, -1, 
-                             (nm_cb_t)parse_feed, (u_char *)ph);
+			op = pcap_dispatch(ph->pcap, -1, parse_feed, (u_char *)ph);
+            fprintf(stderr, "hello!\n");
 			if (op > 0) {
 				npkt += op;
 			} else if (op == -2 || (op == -1 && errno != EAGAIN)) {
-				nm_close(ph->nmcap);
-				ph->nmcap = 0;
+				pcap_close(ph->pcap);
+				ph->pcap = 0;
 				continue;
 			}
 			ndev++;
@@ -575,6 +692,7 @@ static void *
 pcap_feed2(arg)
 	void *arg;
 {
+    //fprintf(stderr, "pcap_feed2\n");
 	PCAP_HANDLER *ph, *ph_list = (PCAP_HANDLER *)arg;
 	int npkt = -1, ndev, op;
 	fd_set readfds;
@@ -587,14 +705,37 @@ pcap_feed2(arg)
 		ndev = 0;
 		FD_ZERO(&readfds);
 		for (ph = ph_list; ph; ph = ph->next) {
-			if (!ph->nmcap) /* skip non-pcap devices */
+			if (!ph->pcap 
+				//BEGIN
+				&& 
+				!ph->nmcap
+				//END
+				) /* skip non-pcap devices */
 				continue;
-			op = ph->nmcap->fd;
-			if (op < 0) /* should not happen */
-				continue;
-			if (op + 1 > ndev)
-				ndev = op + 1;
-			FD_SET(op, &readfds);
+			//BEGIN
+			if(netmap == 0) {
+			//END
+				op = pcap_get_selectable_fd(ph->pcap);
+				if (op < 0) /* should not happen */
+					continue;
+				if (op + 1 > ndev)
+					ndev = op + 1;
+				FD_SET(op, &readfds);
+			//BEGIN
+			}
+			else {
+				if (!ph->nmcap) /* skip non-pcap devices */
+					continue;
+				op = ph->nmcap->fd;
+				//fprintf(stderr,"\n%i\n", op);
+				if (op < 0) /* should not happen */
+					continue;
+				if (op + 1 > ndev)
+					ndev = op + 1;
+				FD_SET(op, &readfds);
+			}
+			//END
+			
 		}
 		if (ndev < 1) /* no one device fd for selecting? */
 			break;
@@ -608,18 +749,41 @@ pcap_feed2(arg)
 		if (!op) /* select timed out, try again */
 			continue;
 		for (ph = ph_list; ph; ph = ph->next) {
-			if (!ph->nmcap) /* skip non-pcap devices */
+			if (!ph->pcap 
+				//BEGIN
+				&& 
+				!ph->nmcap
+				//END
+				) /* skip non-pcap devices */
 				continue;
 #ifdef	notdef
-			if (!FD_ISSET(ph->nmcap->fd, &readfds))
-				continue; /* skip silent devices */
-#endif
-			op = nm_dispatch(ph->nmcap, -1, parse_feed, (u_char *)ph);
-            //fprintf(stderr, "packets read: %i\n", op);
+			if(netmap == 0)
+				if (!FD_ISSET(pcap_get_selectable_fd(ph->pcap), &readfds))
+					continue; /* skip silent devices */
+			//BEGIN
+			else
+				if (!FD_ISSET(ph->nmcap->fd, &readfds))
+					continue; /* skip silent devices */
+			//END
+#endif		
+			//BEGIN
+			if(netmap == 1) {
+				op = nm_dispatch(ph->nmcap, -1, (nm_cb_t)parse_feed, (u_char *)ph);
+				//fprintf(stdout, "hello %i\n", op);
+			}
+			else
+			//END
+				op = pcap_dispatch(ph->pcap, -1, parse_feed, (u_char *)ph);
+			//fprintf(stdout, "hello %i\n", op);
 			if (op > 0) {
 				npkt += op;
 			} else if (op == -2 || (op == -1 && errno != EAGAIN)) {
-				nm_close(ph->pcap);
+				//BEGIN
+				if(netmap == 1)
+					nm_close(ph->nmcap);
+				else
+				//END
+				pcap_close(ph->pcap);
 				ph->pcap = 0;
 			}
 		}
@@ -637,19 +801,34 @@ parse_feed(a, h, p)
     //fprintf(stderr, "parsefeed\n");
 	PCAP_HANDLER *ph = (PCAP_HANDLER *)a;
 	NETSTAT ns;
-    
+
 	/* sanity check */
-	if (!ph || !ph->nmcap) return;
+	if (!ph || (!ph->pcap
+		//BEGIN
+		&& !ph->nmcap
+		)
+		//END
+	) return;
 
 	/*ph->pcap_time = h->ts;*/
 	memset(&ns, 0, sizeof(NETSTAT));
-
-	if (parse_dl(&ns, pcap_datalink(ph->pcap), h->caplen, h->len, p) < 0)
-		return;
+	
+	//BEGIN
+	if(netmap == 1) {
+		if (parse_dl(&ns, DLT_NETMAP, h->caplen, h->len, p) <0) {
+			fprintf(stderr, "stopped at datalink checking\n");
+			return;
+		}
+	}
+	else
+	//END
+		if (parse_dl(&ns, pcap_datalink(ph->pcap), h->caplen, h->len, p) < 0) {
+			fprintf(stderr, "stopped at datalink checking\n");
+			return;
+		}
 
 	ns.mtime = h->ts;
 	pcap_save(ph, &ns);
-    
 }
 
 void
@@ -701,12 +880,14 @@ pcap_show(arg)
 
 	switch (show_mode) {
 	case Interfaces:
+        //fprintf(stderr, "Interfaces");
 		sp = show_if_list(ph);
 		if (search && (idx = show_if_search(ph, search)) != -1)
 			selector_set(idx, sp);
 		selector_redraw(sp);
 		break;
 	case NetStat:
+        //fprintf(stderr, "Netstat");
 		ph = pcap_get_selected(ph);
 		sp = show_stat_list(ph);
 		if (search && (idx = show_stat_search(ph, search)) != -1)
@@ -793,7 +974,7 @@ pcap_set_selected(ph, idx)
 		if (i++ == idx) {
 			sel = ph;
 			ph->selected = 1;
-		} else	ph->selected = 0;
+		} //else	ph->selected = 0;
 	}
 	return sel;
 }
@@ -825,10 +1006,10 @@ traf_show(arg)
 		FD_ZERO(&writefds);
 		op = select_event(&timeout);
 		if (!session_select(&nfds, &readfds, &writefds, &timeout, &op)) {
-            fprintf(stderr, "no active session\n");
 			/* no one active session?? should not happen */
 			return 0;
 		}
+
 		op = select(nfds, &readfds, &writefds, 0, op ? 0 : &timeout);
 		if (op < 1) { /* select interrupted by signals or timed out */
 			if (op < 0) {

@@ -94,9 +94,9 @@ typedef	struct pcap_handler {
 	const char *descr;		/* interface description (or null) */
 	const char *addrstr;		/* interface network address list */
 	pcap_t *pcap;			/* pcap device handler */
-	//added
+	//BEGIN
 	struct nm_desc *nmcap;         /* netmap device handler */
-	//end added
+	//END 
 	pcap_addr_t *addr;		/* pcap device addresses */
 
 /* aggregation stuff */
@@ -137,6 +137,10 @@ void pcap_show(void *arg); /* PCAP_HANDLER *ph_list */
 
 PCAP_HANDLER *pcaph_create(PCAP_HANDLER *top, const struct netstat_header *nh);
 void pcaph_close(PCAP_HANDLER *ph);
+
+//BEGIN
+int ncap_init(PCAP_HANDLER **ph_list, pcap_if_t *dp);
+//END
 
 /* global variables */
 

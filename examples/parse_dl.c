@@ -34,7 +34,9 @@
 #ifndef	DLT_LINUX_SLL
 #define	DLT_LINUX_SLL	113
 #endif
-
+//BEGIN
+#define DLT_NETMAP -3
+//END
 struct ether_dot1q_header {
 	u_char dhost[ETHER_ADDR_LEN];
 	u_char shost[ETHER_ADDR_LEN];
@@ -302,9 +304,17 @@ parse_dl(ns, dlt, caplen, pktlen, pkt)
 		if (type == ETHERTYPE_IP || type == ETHERTYPE_IPV6)
 			ip = (const struct ip *)p;
 		break;
-
+    //BEGIN
+    case DLT_NETMAP:
+        p += 4;
+        ip = (const struct ip *)p;
+        break;
+    //END    
 	default:
 		/* Unknown or unsupported data link type */
+        //added
+        fprintf(stderr, "netmap datalink %i\n", dlt);
+        //added
 		return -1;
 	}
 
@@ -325,6 +335,9 @@ parse_dl(ns, dlt, caplen, pktlen, pkt)
 		int hlen = parse_ip(ns, caplen, ip);
 		if (hlen > 0) hdrlen += hlen;
 	}
+	//added
+	//fprintf(stderr, "%i\n", hdrlen);
+    //added
 	return hdrlen;
 }
 
