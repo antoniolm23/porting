@@ -44,6 +44,18 @@ typedef enum { Interfaces, NetStat, FlowDump, HelpPage } ShowMode;
 #define	FALSE	0
 #endif
 
+//BEGIN
+#ifndef IF_NETMAP
+#define IF_NETMAP 1
+#endif
+#ifndef IF_PCAP
+#define IF_PCAP 2
+#endif
+#ifndef IF_NA
+#define IF_NA 0
+#endif
+//END
+
 #ifndef	MAX
 #define	MAX(a, b)	((b) < (a) ? (a) : (b))
 #endif
@@ -95,6 +107,7 @@ typedef	struct pcap_handler {
 	const char *addrstr;		/* interface network address list */
 	pcap_t *pcap;			/* pcap device handler */
 	//BEGIN
+	int if_type;					/* netmap, pcap or not allocated */
 	struct nm_desc *nmcap;         /* netmap device handler */
 	//END 
 	pcap_addr_t *addr;		/* pcap device addresses */

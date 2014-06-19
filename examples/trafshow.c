@@ -47,10 +47,6 @@
 #define MAX_IFNAMELEN   64
 //END
 
-//BEGIN
-#define NETMAP_HANDLER 1
-//END
-
 #include "trafshow.h"
 #include "parse_dl.h"
 #include "screen.h"
@@ -117,7 +113,7 @@ main(argc, argv)
 	extern char *optarg;
 	extern int optind, opterr;
 	//BEGIN
-	int netmap;
+	int netmap = 0;
 	//END
 	
 	progname = strdup(strip_path(argv[0]));
@@ -148,7 +144,7 @@ main(argc, argv)
 			break;
 		case 'i':
 			//BEGIN
-			if (!strncmp(optarg, "vale:", 5) || !strncmp(optarg, "netmap:", 7)) {
+			if (!strncmp(optarg, "vale", 4) || !strncmp(optarg, "netmap:", 7)) {
 				strcpy(virtual_interface, optarg);
 				fprintf(stderr, "%s\n", virtual_interface);
 				show_mode = NetStat;
@@ -204,7 +200,7 @@ main(argc, argv)
 	//BEGIN 
 	if (netmap == 1) {
 		//fprintf(stderr, "netmapSet");
-		if((op = ncap_init(&ph_list)) < 1) {
+		if ((op = ncap_init(&ph_list)) < 1) {
 			fprintf(stderr, "Wrong in allocating the nmcap\n");
 			exit(1);
 		}
@@ -270,7 +266,7 @@ main(argc, argv)
 	}
 	
 	//BEGIN
-	if(netmap == 1) {
+	if (netmap == 1) {
 		if (pthread_create(&pcap_thr, 0, pcap_feed2, ph_list)) {
 			perror("pthread_create(pcap_feed)");
 			exit(1);
@@ -368,7 +364,7 @@ pcap_init(ph_list, dp)
 
 		buf[0] = '\0';
 		if ((pd = pcap_open_live(dp->name, SNAPLEN, promisc, 1, buf)) == 0) {
-			fprintf(stderr, "%s: %s\n", dp->name, buf);
+			fprintf(stderr, "%s: %s\n", dp->name, buf);			
 			err++;
 			continue;
 		}
@@ -405,7 +401,9 @@ pcap_init(ph_list, dp)
 		else	ph->descr = strdup(parse_dl_name(type));
 		ph->pcap = pd;
 		ph->addr = dp->addresses; /* XXX must be deep copy? */
-
+		//BEGIN
+		ph->if_type = IF_PCAP;
+		//END
 		/* make string of network address list */
 		buf[0] = '\0';
 		cp = buf;
@@ -437,7 +435,7 @@ pcap_init(ph_list, dp)
 		}
 		*cp = '\0';
 		ph->addrstr = strdup(buf);
-
+		
 		if ((ph->ns_mutex = (pthread_mutex_t *)malloc(sizeof(pthread_mutex_t))) == 0) {
 			perror("malloc");
 			exit(1);
@@ -491,9 +489,11 @@ ncap_init(ph_list)
 	ph->selected = 1;
 	ph->descr = strdup("Virtual");
 	ph->nmcap = nd;
-	ph->pcap = (pcap_t*)nd; //in this way we can remove some additions
 	
-	/*it's related to the physical interface, apparently none touches this*/
+	ph->if_type = IF_NETMAP;
+	
+	/*it's related to the physical interface (all the addresses of a physical 
+	 * interface e.g. : IPv4, IPv6, MAC), Only Cisco netflow uses it*/
 	ph->addr = NULL; 
 
 	ph->addrstr = strdup(virtual_interface);
@@ -550,7 +550,11 @@ pcaph_create(top, nh)
 	ph->descr = top->descr;
 	ph->pcap = top->pcap;
 	ph->selected = 1;
-
+	
+	//BEGIN
+	ph->if_type = top->if_type;
+	//END
+	
 	ph->top = top;
 	top->deep = ph;
 	return ph;
@@ -581,7 +585,7 @@ pcaph_close(ph)
 	}
 	free(ph);
 }
-
+//IF modified
 char *
 pcap_setexpr(ph, expr)
 	PCAP_HANDLER *ph;
@@ -596,7 +600,7 @@ pcap_setexpr(ph, expr)
 	if (!expr) return 0;
 
 	for (; ph; ph = ph->next) {
-		if (!ph->pcap) /* skip non-pcap devices */
+		if (ph->if_type == IF_NA) /* skip non-pcap devices */
 			continue;
 
 		if (pcap_lookupnet(strcpy(name, ph->name), &net, &mask, buf) < 0) {
@@ -617,6 +621,7 @@ pcap_setexpr(ph, expr)
 	return 0;
 }
 
+//IF modified
 static void *
 pcap_feed(arg)
 	void *arg;
@@ -629,15 +634,17 @@ pcap_feed(arg)
 		npkt = 0;
 		ndev = 0;
 		for (ph = ph_list; ph; ph = ph->next) {
-			if (!ph->pcap) /* skip non-pcap devices */
+			if (ph->if_type == IF_NA) /* skip closed devices */
 				continue;
 			op = pcap_dispatch(ph->pcap, -1, parse_feed, (u_char *)ph);
-            fprintf(stderr, "hello!\n");
 			if (op > 0) {
 				npkt += op;
 			} else if (op == -2 || (op == -1 && errno != EAGAIN)) {
 				pcap_close(ph->pcap);
 				ph->pcap = 0;
+				//BEGIN
+				ph->if_type = IF_NA;
+				//END
 				continue;
 			}
 			ndev++;
@@ -665,10 +672,10 @@ pcap_feed2(arg)
 		ndev = 0;
 		FD_ZERO(&readfds);
 		for (ph = ph_list; ph; ph = ph->next) {
-			if (!ph->pcap) /* skip non-pcap devices */
+			if (ph->if_type == IF_NA) /* skip closed devices */
 				continue;
 			//BEGIN
-			if(!strncmp(ph->descr, "Virtual", 7)) {
+			if (ph->if_type == IF_NETMAP) {
 				op = ph->nmcap->fd;
 				//fprintf(stderr,"\n%i\n", op);
 				if (op < 0) /* should not happen */
@@ -702,10 +709,10 @@ pcap_feed2(arg)
 		if (!op) /* select timed out, try again */
 			continue;
 		for (ph = ph_list; ph; ph = ph->next) {
-			if (!ph->pcap) /* skip non-pcap devices */
+			if (ph->if_type == IF_NA) /* skip non-pcap devices */
 				continue;
 #ifdef	notdef
-			if(!strncmp(ph->descr, "Virtual", 7))
+			if (ph->if_type == IF_NETMAP)
 				if (!FD_ISSET(ph->nmcap->fd, &readfds))
 					continue; /* skip silent devices */
 			//BEGIN
@@ -715,7 +722,7 @@ pcap_feed2(arg)
 			//END
 #endif		
 			//BEGIN
-			if(!strncmp(ph->descr, "Virtual", 7)) {
+			if (ph->if_type == IF_NETMAP) {
 				op = nm_dispatch(ph->nmcap, -1, (nm_cb_t)parse_feed, (u_char *)ph);
 				//fprintf(stdout, "hello %i\n", op);
 			}
@@ -727,12 +734,18 @@ pcap_feed2(arg)
 				npkt += op;
 			} else if (op == -2 || (op == -1 && errno != EAGAIN)) {
 				//BEGIN
-				if(!strncmp(ph->descr, "Virtual", 7))
+				if (ph->if_type == IF_NETMAP) {
 					nm_close(ph->nmcap);
+					ph->nmcap = 0;
+					ph->if_type = IF_NA;
+				}
 				else
 				//END
 				pcap_close(ph->pcap);
 				ph->pcap = 0;
+				//BEGIN
+				ph->if_type = IF_NA;
+				//END
 			}
 		}
 	}
@@ -752,7 +765,7 @@ parse_feed(a, h, p)
 	int datalink_type;
 
 	/* sanity check */
-	if (!ph || !ph->pcap) return;
+	if (!ph || ph->if_type == IF_NA) return;
 
 	/*ph->pcap_time = h->ts;*/
 	memset(&ns, 0, sizeof(NETSTAT));
@@ -1041,7 +1054,7 @@ my_datalink(ph)
 	
 	if (!ph)
 		return -1;
-	if(!strncmp(ph->descr, "Virtual", 7))
+	if (ph->if_type == IF_NETMAP)
 		return DLT_NETMAP;
 	else
 		return pcap_datalink(ph->pcap);
